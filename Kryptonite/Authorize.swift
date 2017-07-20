@@ -10,19 +10,46 @@ import Foundation
 import UIKit
 
 extension Request {
-    var approveController:ApproveController? {
+    func approveController(for session:Session) -> UIViewController? {
         
         switch self.body {
         case .ssh:
-            return Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "SSHApproveController") as? SSHApproveController
+            let sshApprove = Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "SSHApproveController") as? SSHApproveController
+            sshApprove?.session = session
+            sshApprove?.request = self
+            
+            return sshApprove
+            
         case .git(let gitSign):
             switch gitSign.git {
             case .commit:
-                return Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "CommitApproveController") as? CommitApproveController
+                let commitApprove = Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "CommitApproveController") as? CommitApproveController
+                commitApprove?.session = session
+                commitApprove?.request = self
+                
+                return commitApprove
+
             case .tag:
-                return Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "TagApproveController") as? TagApproveController
+                let tagApprove = Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "TagApproveController") as? TagApproveController
+                tagApprove?.session = session
+                tagApprove?.request = self
+                
+                return tagApprove
             }
-        default:
+        case .createTeam:
+            let teamLoad =  Resources.Storyboard.Team.instantiateViewController(withIdentifier: "TeamLoadController") as? TeamLoadController
+            teamLoad?.joinType = TeamJoinType.create(self, session)
+            
+            return teamLoad
+        
+        case .decryptLog, .teamOperation, .readTeam:
+            let teamApprove = Resources.Storyboard.Approval.instantiateViewController(withIdentifier: "TeamApproveController") as? TeamApproveController
+            teamApprove?.session = session
+            teamApprove?.request = self
+            
+            return teamApprove
+
+        case .me, .unpair, .noOp:
             return nil
         }
     }
@@ -49,16 +76,13 @@ extension UIViewController {
         Policy.removePendingAuthorization(session: session, request: request)
         
         // proceed to show approval request
-        guard let approvalController = request.approveController else {
+        guard let approvalController = request.approveController(for: session) else {
             log("nil approve controller", .error)
             return
         }
         
         approvalController.modalTransitionStyle = UIModalTransitionStyle.coverVertical
         approvalController.modalPresentationStyle = UIModalPresentationStyle.overFullScreen
-        
-        approvalController.session = session
-        approvalController.request = request
         
         dispatchMain {
             if self.presentedViewController is AutoApproveController {

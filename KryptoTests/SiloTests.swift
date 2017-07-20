@@ -7,6 +7,8 @@
 //
 
 import XCTest
+@testable import Kryptonite
+
 import UIKit
 
 class SiloTests: XCTestCase {
@@ -95,11 +97,9 @@ class SiloTests: XCTestCase {
             do {
                 try Silo.shared.handle(request: request, session: session, communicationMedium: .remoteNotification)
                 XCTFail("expected exception")
-            } catch let e {
-                guard let _ = e as? RequestPendingError else {
-                    XCTFail("\(e)")
-                    return
-                }
+            } catch Silo.Errors.requestPending {
+            } catch {
+                XCTFail("got request pending")
             }
         } catch let e {
             XCTFail("\(e)")
@@ -121,11 +121,9 @@ class SiloTests: XCTestCase {
             do {
                 try Silo.shared.handle(request: request, session: session, communicationMedium: .remoteNotification)
                 XCTFail("expected exception")
-            } catch let e {
-                guard let _ = e as? InvalidRequestTimeError else {
-                    XCTFail("\(e)")
-                    return
-                }
+            } catch Silo.Errors.invalidRequestTime {
+            } catch {
+                XCTFail("got invalid request time")
             }
         } catch let e {
             XCTFail("\(e)")
@@ -147,11 +145,9 @@ class SiloTests: XCTestCase {
             do {
                 try Silo.shared.handle(request: request, session: session, communicationMedium: .remoteNotification)
                 XCTFail("expected exception")
-            } catch let e {
-                guard let _ = e as? InvalidRequestTimeError else {
-                    XCTFail("\(e)")
-                    return
-                }
+            }  catch Silo.Errors.invalidRequestTime {
+            } catch {
+                XCTFail("got invalid request time")
             }
         } catch let e {
             XCTFail("\(e)")
@@ -213,7 +209,7 @@ class SiloTests: XCTestCase {
                 try Silo.shared.handle(request: request, session: session, communicationMedium: .remoteNotification)
                 XCTFail("expected exception")
             } catch let e {
-                guard let _ = e as? KeyManagerError else {
+                guard let _ = e as? KeyManager.Errors else {
                     XCTFail("\(e)")
                     return
                 }
@@ -240,12 +236,9 @@ class SiloTests: XCTestCase {
             try Silo.shared.handle(request: request, session: session, communicationMedium: .remoteNotification)
             XCTFail("expected RequestPendingError")
 
+        }  catch Silo.Errors.requestPending {
         } catch {
-            guard error is RequestPendingError else {
-                XCTFail("\(error)")
-                return
-            }
-            
+            XCTFail("got request pending")
         }
     }
 }

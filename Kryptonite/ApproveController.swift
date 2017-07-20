@@ -17,7 +17,8 @@ class ApproveController:UIViewController {
     @IBOutlet weak var resultViewHeight:NSLayoutConstraint!
     @IBOutlet weak var resultLabel:UILabel!
 
-    
+    @IBOutlet weak var temporaryApprovalButton:UIButton?
+
     @IBOutlet weak var deviceLabel:UILabel!
     
     @IBOutlet weak var checkBox:M13Checkbox!
@@ -38,6 +39,9 @@ class ApproveController:UIViewController {
         return request?.body.analyticsCategory ?? "unknown-request"
     }
     
+    var temporaryApprovalTime:TemporaryApprovalTime!
+
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -56,6 +60,8 @@ class ApproveController:UIViewController {
             deviceLabel.text = session.pairing.displayName.uppercased()
         }
         
+        temporaryApprovalTime = Policy.temporaryApprovalInterval
+        temporaryApprovalButton?.setTitle("Allow for \(temporaryApprovalTime.description)", for: UIControlState.normal)
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -140,7 +146,7 @@ class ApproveController:UIViewController {
         isEnabled = false
         
         do {
-            Policy.allow(session: session, for: Policy.Interval.threeHours)
+            Policy.allow(session: session, for: temporaryApprovalTime.value)
             let resp = try Silo.shared.lockResponseFor(request: request, session: session, signatureAllowed: true)
             try TransportControl.shared.send(resp, for: session)
             
@@ -159,7 +165,7 @@ class ApproveController:UIViewController {
         
         swipeDownRejectGesture.isEnabled = false
 
-        self.resultLabel.text = "Allow for 3 hours".uppercased()
+        self.resultLabel.text = "Allowed for \(temporaryApprovalTime.description)".uppercased()
         
         UIView.animate(withDuration: 0.3, animations: {
             
@@ -176,7 +182,7 @@ class ApproveController:UIViewController {
             }
         }
 
-        Analytics.postEvent(category: category, action: "foreground approve", label: "time", value: UInt(Policy.Interval.threeHours.rawValue))
+        Analytics.postEvent(category: category, action: "foreground approve", label: "time", value: UInt(temporaryApprovalTime.value))
 
     }
     
@@ -359,6 +365,56 @@ class TagApproveController:ApproveController {
         tagLabel.text = "--"
         taggerLabel.text = "--"
         taggerDate.text = "--"
+    }
+    
+}
+
+class TeamApproveController:ApproveController {
+    
+    @IBOutlet weak var teamLabel:UILabel!
+    @IBOutlet weak var dateLabel:UILabel!
+    
+    @IBOutlet weak var teamApprovalContentView:UIView!
+    var contentController:TeamApprovalContentController?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        
+        guard   let request = request,
+            let identity:TeamIdentity = (try? IdentityManager.getTeamIdentity()) as? TeamIdentity
+            else {
+                clear()
+                return
+        }
+        
+        contentController?.requestBody = request.body
+        contentController?.identity = identity
+        contentController?.setData()
+        
+        dateLabel.text = Date(timeIntervalSince1970: TimeInterval(request.unixSeconds)).timeAgo()
+        
+        do {
+            teamLabel.text = try identity.team().name
+        } catch {
+            //todo handle error here
+            clear()
+        }
+    }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if let contentController = segue.destination as? TeamApprovalContentController {
+            contentController.view.translatesAutoresizingMaskIntoConstraints = false
+            self.contentController = contentController
+        }
+    }
+    
+    func clear() {
+        teamLabel.text = "--"
+        dateLabel.text = "--"
     }
     
 }

@@ -12,44 +12,68 @@ import UserNotifications
 extension Policy {
     
     //MARK: Notification Actions
-    static var authorizeCategory:UNNotificationCategory = {
+    static var authorizeCategory:UNNotificationCategory {
         if #available(iOS 11.0, *) {
             return UNNotificationCategory(identifier: authorizeCategoryIdentifier,
-                                   actions: [Policy.approveAction, Policy.approveTemporaryAction, Policy.rejectAction],
+                                   actions: [Policy.approveOnceAction, Policy.approveTemporaryAction, Policy.rejectAction],
                                    intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: "Kryptonite Request",
                                    options: .customDismissAction)
         } else {
             return UNNotificationCategory(identifier: authorizeCategoryIdentifier,
-                                   actions: [Policy.approveAction, Policy.approveTemporaryAction, Policy.rejectAction],
+                                   actions: [Policy.approveOnceAction, Policy.approveTemporaryAction, Policy.rejectAction],
                                    intentIdentifiers: [],
                                    options: .customDismissAction)
         }
-    }()
+    }
     
+    static var authorizeNoTemporaryCategory:UNNotificationCategory {
+        if #available(iOS 11.0, *) {
+            return UNNotificationCategory(identifier: authorizeCategoryIdentifier,
+                                          actions: [Policy.approveAction, Policy.rejectAction],
+                                          intentIdentifiers: [],
+                                          hiddenPreviewsBodyPlaceholder: "Kryptonite Request",
+                                          options: .customDismissAction)
+        } else {
+            return UNNotificationCategory(identifier: authorizeCategoryIdentifier,
+                                          actions: [Policy.approveAction, Policy.rejectAction],
+                                          intentIdentifiers: [],
+                                          options: .customDismissAction)
+        }
+    }
     
-    static var approveAction:UNNotificationAction = {
+    static var approveAction:UNNotificationAction {
+        return UNNotificationAction(identifier: ActionIdentifier.approve.rawValue,
+                                    title: "Allow",
+                                    options: .authenticationRequired)
+    }
+    
+    static var approveOnceAction:UNNotificationAction {
         return UNNotificationAction(identifier: ActionIdentifier.approve.rawValue,
                                     title: "Allow once",
                                     options: .authenticationRequired)
-    }()
+    }
     
-    
-    static var approveTemporaryAction:UNNotificationAction = {
+    static var approveTemporaryAction:UNNotificationAction {
         return UNNotificationAction(identifier: ActionIdentifier.temporary.rawValue,
-                                    title: "Allow for 3 hours",
+                                    title: "Allow for " + Policy.temporaryApprovalInterval.description,
                                     options: .authenticationRequired)
-    }()
+    }
     
     static var rejectAction:UNNotificationAction = {
         return UNNotificationAction(identifier: ActionIdentifier.reject.rawValue,
                                     title: "Reject",
                                     options: .destructive)
     }()
-
+    
+    class func teamDidUpdate() {
+        // update push notifications
+//        dispatchMain {
+//            (UIApplication.shared.delegate as? AppDelegate)?.registerPushNotifications()
+//        }
+    }
     
     class func requestUserAuthorization(session:Session, request:Request) {
-        
         dispatchMain {
             switch UIApplication.shared.applicationState {
                 
@@ -109,9 +133,7 @@ extension Policy {
                 
                 Current.viewController?.showApprovedRequest(session: session, request: request)
             }
-
         }
-        
     }
     
     
@@ -137,4 +159,5 @@ extension Policy {
             }
         }
     }
+    
 }

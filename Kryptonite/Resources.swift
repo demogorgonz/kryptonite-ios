@@ -15,6 +15,8 @@ struct Resources {
     struct Storyboard {
         static let Main = UIStoryboard(name: "Main", bundle: Bundle.main)
         static let Approval = UIStoryboard(name: "Approval", bundle: Bundle.main)
+        static let Team = UIStoryboard(name: "Team", bundle: Bundle.main)
+
     }
     
     static func makeAppearences() {
@@ -29,13 +31,13 @@ struct Resources {
                 NSAttributedStringKey.font: font,
             ]
         }
-
-
-       // UIButton.appearance().tintColor = UIColor.app
+        
+        
+        // UIButton.appearance().tintColor = UIColor.app
         UISwitch.appearance().tintColor = UIColor.app
         UISegmentedControl.appearance().tintColor = UIColor.app
         
-
+        
         // Custom Classes
         StyleFilledButton.appearance().backgroundColor = UIColor.app
         StyleFilledView.appearance().backgroundColor = UIColor.app
@@ -105,7 +107,7 @@ extension UIColor {
         let b: Int = (hash & 0x0000FF)
         return RGB(CGFloat(r), CGFloat(g), CGFloat(b), 1.0)
     }
-
+    
 }
 
 //MARK: Navigation Bar
@@ -117,14 +119,28 @@ extension UINavigationItem {
         
         //logo.tintColor = UIColor.black.withAlphaComponent(0.2)
         logo.frame = CGRect(origin: CGPoint(x: 0, y: 0), size:CGSize(width: 30, height: 34))
-
+        
+        
+        let title = UIView()
+        title.addSubview(logo)
+        self.titleView = title
+        logo.center = title.center
+    }
     
+    func setKrTeamsLogo() {        
+        let logo = UIImageView(image: UIImage(named: "kryptonite_teams_logo"))
+        
+        //logo.tintColor = UIColor.black.withAlphaComponent(0.2)
+        logo.frame = CGRect(origin: CGPoint(x: 0, y: 0), size:CGSize(width: 30, height: 34))
+        
+        
         let title = UIView()
         title.addSubview(logo)
         self.titleView = title
         logo.center = title.center
     }
 
+    
 }
 
 
@@ -138,7 +154,7 @@ class KRButton:UIButton {
             layer.masksToBounds = cornerRadius > 0
         }
     }
-
+    
     @IBInspectable var defaultColor:UIColor = UIColor.app {
         didSet {
             setTitleColor(defaultColor, for: UIControlState.normal)
@@ -160,9 +176,9 @@ class KRButton:UIButton {
             layer.borderWidth = borderWidth
         }
     }
-
     
-
+    
+    
     override init(frame: CGRect) {
         super.init(frame: frame)
     }
@@ -174,7 +190,7 @@ class KRButton:UIButton {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         backgroundColor = defaultColor
-
+        
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
@@ -231,7 +247,7 @@ class KRSimpleButton:UIButton {
             backgroundColor = highlightedColor
             highlightedColor = highlight
         }
-
+        
     }
 }
 
@@ -297,7 +313,7 @@ extension UIView {
     func setBorder(color:UIColor = UIColor.app, cornerRadius:CGFloat = 0.0, borderWidth:CGFloat = 0.0) {
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
-
+        
         layer.borderWidth = borderWidth
         layer.borderColor = color.cgColor
     }
@@ -369,12 +385,12 @@ extension UIView {
 class RoundedView:UIView {
     
     @IBInspectable var cornerRadius:CGFloat = 0
-
+    
     @IBInspectable var topLeft:Bool = false
     @IBInspectable var topRight:Bool = false
     @IBInspectable var bottomLeft:Bool = false
     @IBInspectable var bottomRight:Bool = false
-
+    
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -411,6 +427,6 @@ class RoundedView:UIView {
         mask.path = path.cgPath
         self.layer.mask = mask
     }
-
+    
     
 }

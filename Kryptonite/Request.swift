@@ -55,10 +55,16 @@ enum RequestBody:Jsonable {
     case unpair(UnpairRequest)
     case noOp
     
+    // team
+    case createTeam(CreateTeamRequest)
+    case readTeam(ReadTeamRequest)
+    case teamOperation(TeamOperationRequest)
+    case decryptLog(LogDecryptionRequest)
+
     
     var isApprovable:Bool {
         switch self {
-        case .ssh, .git:
+        case .ssh, .git, .createTeam, .readTeam, .teamOperation, .decryptLog:
             return true
         case .me, .unpair, .noOp:
             return false
@@ -87,6 +93,22 @@ enum RequestBody:Jsonable {
             requests.append(.unpair(try UnpairRequest(json: json)))
         }
         
+        if let json:Object = try? json ~> "create_team_request" {
+            requests.append(.createTeam(try CreateTeamRequest(json: json)))
+        }
+        
+        if let json:Object = try? json ~> "read_team_request" {
+            requests.append(.readTeam(try ReadTeamRequest(json: json)))
+        }
+
+        if let json:Object = try? json ~> "team_operation_request" {
+            requests.append(.teamOperation(try TeamOperationRequest(json: json)))
+        }
+
+        if let json:Object = try? json ~> "log_decryption_request" {
+            requests.append(.decryptLog(try LogDecryptionRequest(json: json)))
+        }
+
         
         // if no requests, it's a noOp
         if requests.isEmpty {
@@ -113,6 +135,14 @@ enum RequestBody:Jsonable {
             json["sign_request"] = s.object
         case .git(let g):
             json["git_sign_request"] = g.object
+        case .createTeam(let c):
+            json["create_team_request"] = c.object
+        case .readTeam(let r):
+            json["read_team_request"] = r.object
+        case .teamOperation(let to):
+            json["team_operation_request"] = to.object
+        case .decryptLog(let dl):
+            json["log_decryption_request"] = dl.object
         case .unpair(let u):
             json["unpair_request"] = u.object
         case .noOp:
@@ -133,6 +163,14 @@ enum RequestBody:Jsonable {
             case .tag:
                 return "git-tag-signature"
             }
+        case .createTeam:
+            return "create-team"
+        case .readTeam:
+            return "read-team"
+        case .teamOperation:
+            return "team-operation"
+        case .decryptLog:
+            return "decrypt-log"
         case .me:
             return "me"
         case .noOp:
@@ -289,8 +327,6 @@ struct UnpairRequest:Jsonable {
     init(json: Object) throws {}
     var object: Object {return [:]}
 }
-
-
 
 
 

@@ -12,13 +12,6 @@ import AwesomeCache
 
 class Policy {
     
-    enum Interval:TimeInterval {
-        //case fifteenSeconds = 15
-        case oneHour = 3600
-        case threeHours = 10800
-    }
-
-    
     //MARK: Settings
     enum StorageKey:String {
         case userApproval = "policy_user_approval"
@@ -37,12 +30,15 @@ class Policy {
     // Category Identifiers
     static let autoAuthorizedCategoryIdentifier = "auto_authorized_identifier"
     static let authorizeCategoryIdentifier = "authorize_identifier"
+    static let authorizeNoTemporaryCategoryIdentifier = "authorize_non_temp_identifier"
+
     
     enum ActionIdentifier:String {
         case approve = "approve_identifier"
         case temporary = "approve_temp_identifier"
         case reject = "reject_identifier"
     }
+    
     
     
     //MARK: Setters
@@ -63,9 +59,9 @@ class Policy {
         UserDefaults.group?.synchronize()
     }
     
-    static func allow(session:Session, for time:Interval) {
+    static func allow(session:Session, for time:TimeInterval) {
         UserDefaults.group?.set(Date(), forKey: StorageKey.userLastApproved.key(id: session.id))
-        UserDefaults.group?.set(time.rawValue, forKey: StorageKey.userApprovalInterval.key(id: session.id))
+        UserDefaults.group?.set(time, forKey: StorageKey.userApprovalInterval.key(id: session.id))
         UserDefaults.group?.synchronize()
         
         Policy.sendAllowedPendingIfNeeded()
@@ -126,18 +122,39 @@ class Policy {
         
         switch requestBody {
         case .ssh(let sshSign):
-            // check if verifedHostAuth's 'hostName' does NOT have a KnownHost attached to it
-            if  let hostName = sshSign.verifiedHostAuth?.hostName,
-                KnownHostManager.shared.entryExists(for: hostName) == false
-            {
-                return true
-            }
             
-            // check if unknown host and check policy for unknown hosts
-            if  Policy.needsUnknownHostApproval(for: session) && sshSign.isUnknownHost
-            {
+            do {
+                // check if verifedHostAuth's 'hostName' does NOT have a KnownHost attached to it
+                if  let hostName = sshSign.verifiedHostAuth?.hostName,
+                    try KnownHostManager.shared.entryExists(for: hostName) == false
+                {
+                    // if we have a team and
+                    // check if verifedHostAuth's 'hostName' is pinned to that team
+                    guard  let teamIdentity = (try? IdentityManager.getTeamIdentity()) as? TeamIdentity,
+                        let hostName = sshSign.verifiedHostAuth?.hostName,
+                        try teamIdentity.dataManager.sshHostKeyExists(for: hostName) == false
+                        else {
+                            break
+                    }
+                    
+                    // this is a first time host
+                    return true
+                }
+                
+                
+                // check if unknown host and check policy for unknown hosts
+                if  Policy.needsUnknownHostApproval(for: session) && sshSign.isUnknownHost
+                {
+                    return true
+                }
+
+            } catch {
+                log("error fetching known hosts data: \(error)", .error)
                 return true
             }
+        
+        case .decryptLog, .teamOperation, .readTeam, .createTeam:
+            return true
             
         case .git, .me, .noOp, .unpair:
             break
@@ -205,7 +222,7 @@ class Policy {
         
     }
     
-    private static var policyCacheURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_SECURITY_ID)?.appendingPathComponent("policy_cache")
+    private static var policyCacheURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupSecurityID)?.appendingPathComponent("policy_cache")
     
     static var lastPendingAuthorization:PendingAuthorization? {
         let cache = try? Cache<NSData>(name: "policy_pending_authorizations", directory: policyCacheURL)
@@ -298,6 +315,46 @@ class Policy {
     
 }
 
+extension Request {
+    var authorizeCategoryIdentifier:String {
+        switch self.body {
+        case .createTeam, .me, .unpair, .noOp:
+            return ""
+
+        case .decryptLog, .readTeam:
+            return Policy.authorizeNoTemporaryCategoryIdentifier
+            
+        case .teamOperation(let teamOpRequest):
+            switch teamOpRequest.operation {
+            case .invite, .cancelInvite,
+                 .addLoggingEndpoint, .removeLoggingEndpoint,
+                 .pinHostKey, .unpinHostKey,
+                 .setPolicy,
+                 .setTeamInfo:
+                
+                return Policy.authorizeNoTemporaryCategoryIdentifier
+                
+            // needs to load the member and requires explicit in app permission
+            case .removeMember,
+                 .addAdmin, .removeAdmin:
+                return ""
+            }
+            
+        case .ssh, .git:
+            return Policy.authorizeCategoryIdentifier
+        }
+    }
+    
+    var autoAuthorizeCategoryIdentifier:String {
+        switch self.body {
+        case .decryptLog, .teamOperation, .readTeam, .createTeam, .me, .unpair, .noOp:
+            return ""
+            
+        case .ssh, .git:
+            return Policy.autoAuthorizedCategoryIdentifier
+        }
+    }
+}
 
 
 func ==(l:Policy.PendingAuthorization, r:Policy.PendingAuthorization) -> Bool {

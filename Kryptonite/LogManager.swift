@@ -9,6 +9,7 @@
 import Foundation
 import CoreData
 import JSON
+import PGPFormat
 
 class LogManager {
     
@@ -30,7 +31,7 @@ class LogManager {
     
     //MARK: Core Data setup
     lazy var applicationDocumentsDirectory:URL? = {
-        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_SECURITY_ID)?.appendingPathComponent("logs")
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupSecurityID)?.appendingPathComponent("logs")
     }()
     
     lazy var managedObjectModel:NSManagedObjectModel? = {
@@ -162,6 +163,95 @@ class LogManager {
     
     
     //MARK: Saving
+    // backwards compatibility
+    func save(auditLog:Audit.Log, sessionID:String) {
+                
+        switch auditLog.body {
+        case .ssh(let sshSig):
+            
+            var signature:String
+            
+            switch sshSig.result {
+            case .error(let error):
+                signature = "error: \(error)"
+            case .userRejected:
+                signature = "rejected"
+                
+            case .hostMismatch:
+                signature = "rejected"
+                
+            case .signature(let sig):
+                signature = sig.toBase64()
+            }
+            
+            let host = sshSig.hostAuthorization?.host ?? "unknown host"
+            let display =  "\(sshSig.user) @ \(host)"
+            
+            let logStatement = SSHSignatureLog(session: sessionID, hostAuth: sshSig.hostAuthorization, signature: signature, displayName:display)
+            self.save(theLog: logStatement, deviceName: auditLog.session.deviceName)
+
+        case .gitCommit(let commitSig):
+            var signature:String
+            var asciiArmoredSig:String?
+            
+            switch commitSig.result {
+            case .error(let error):
+                signature = "error: \(error)"
+            case .userRejected:
+                signature = "rejected"
+                
+            case .signature(let sig):
+                signature = sig.toBase64()
+                asciiArmoredSig = AsciiArmorMessage(packetData: sig, blockType: .signature, comment: Properties.pgpMessageComment).toString()
+            }
+            
+            
+            guard let commitInfo = try? CommitInfo(tree: commitSig.tree,
+                                                 parent: commitSig.parents.first,
+                                                 mergeParents: commitSig.parents,
+                                                 author: commitSig.author,
+                                                 committer: commitSig.committer,
+                                                 message: commitSig.message)
+            else {
+                return
+            }
+            
+            var commitHash:String
+            if let asciiArmoredSig = asciiArmoredSig, let theCommitHash = try? commitInfo.commitHash(asciiArmoredSignature: asciiArmoredSig).hex {
+                commitHash = theCommitHash
+            } else {
+                commitHash = ""
+            }
+
+
+            let logStatement = CommitSignatureLog(session: sessionID, signature: signature, commitHash: commitHash, commit: commitInfo)
+            self.save(theLog: logStatement, deviceName: auditLog.session.deviceName)
+
+        case .gitTag(let tagSig):
+            var signature:String
+            
+            switch tagSig.result {
+            case .error(let error):
+                signature = "error: \(error)"
+            case .userRejected:
+                signature = "rejected"
+                
+            case .signature(let sig):
+                signature = sig.toBase64()
+            }
+            
+            
+            guard let tagInfo = try? TagInfo(object: tagSig._object, type: tagSig.type, tag: tagSig.tag, tagger: tagSig.tagger, message: tagSig.message)
+            else {
+                return
+            }
+            
+            let logStatement = TagSignatureLog(session: sessionID, signature: signature, tag: tagInfo)
+            self.save(theLog: logStatement, deviceName: auditLog.session.deviceName)
+        }
+        
+        
+    }
     func save<L:LogStatement>(theLog:L, deviceName:String) {
         mutex.lock()
         
@@ -197,10 +287,8 @@ class LogManager {
             }
         }
 
-        
+        // unlock and notify we have a new log
         mutex.unlock()
-        
-        // notify we have a new log
         NotificationCenter.default.post(name: NSNotification.Name(rawValue: "new_log"), object: nil)
     }
     

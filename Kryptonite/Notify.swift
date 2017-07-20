@@ -92,7 +92,7 @@ class Notify {
                     return
                 }
             }
-            
+        
             // then, check if request exists in delivered notifications
             UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { (notes) in
                 
@@ -116,7 +116,7 @@ class Notify {
                 content.body = noteBody
                 content.sound = UNNotificationSound.default()
                 content.userInfo = ["session_display": session.pairing.displayName, "session_id": session.id, "request": request.object]
-                content.categoryIdentifier = Policy.authorizeCategoryIdentifier
+                content.categoryIdentifier = request.authorizeCategoryIdentifier
                 content.threadIdentifier = request.id
                 
                 let noteId = request.id
@@ -126,9 +126,9 @@ class Notify {
                 UNUserNotificationCenter.current().add(request) {(error) in
                     log("error firing notification: \(String(describing: error))")
                 }
+                
             })
         })
-
     }
     
 
@@ -142,14 +142,14 @@ class Notify {
         
         let noteTitle = "Approved request from \(session.pairing.displayName)"
         let (noteSubtitle, noteBody) = request.notificationDetails()
-
+        
         let noteId = GroupableRequestNotificationIdentifier(request: request, session:session)
         
         let content = UNMutableNotificationContent()
         content.title = noteTitle
         content.subtitle = noteSubtitle
         content.body = noteBody
-        content.categoryIdentifier = Policy.autoAuthorizedCategoryIdentifier
+        content.categoryIdentifier = request.autoAuthorizeCategoryIdentifier
         content.sound = UNNotificationSound.default()
         content.userInfo = ["session_display": session.pairing.displayName, "session_id": session.id, "request": request.object]
         
@@ -191,7 +191,6 @@ class Notify {
                 }
             }
         })
-
     }
     
     /**

@@ -58,6 +58,14 @@ extension KRBase {
     }
 }
 
+extension UINavigationController: KRBase {
+    func approveControllerDismissed(allowed: Bool) {
+        if let root = self.viewControllers.first {
+            self.defaultApproveControllerDismissed(viewController: root, allowed: allowed)
+        }
+    }
+}
+
 class KRBaseController: UIViewController, KRBase {
     
     override func viewDidLoad() {
@@ -65,6 +73,7 @@ class KRBaseController: UIViewController, KRBase {
     }
     
     var connectivity:Connectivity?
+    var linkListener:LinkListener?
     
     //MARK: Policy
     override func viewWillAppear(_ animated: Bool) {
@@ -82,11 +91,13 @@ class KRBaseController: UIViewController, KRBase {
 
         checkForUpdatesIfNeeded()
         connectivity = Connectivity(presenter: self)
+        linkListener = LinkListener(self.onListen)
     }
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         connectivity = nil
+        linkListener = nil
     }
 
     func shouldPostAnalytics() -> Bool {
@@ -102,6 +113,10 @@ class KRBaseController: UIViewController, KRBase {
 
 class KRBaseTableController: UITableViewController, KRBase {
     
+    var connectivity:Connectivity?
+    var linkListener:LinkListener?
+
+    
     //MARK: Policy
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -114,18 +129,19 @@ class KRBaseTableController: UITableViewController, KRBase {
         checkIfPushEnabled()
     }
     
-    var connectivity:Connectivity?
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
         checkForUpdatesIfNeeded()
         connectivity = Connectivity(presenter: self)
+        linkListener = LinkListener(self.onListen)
     }
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         connectivity = nil
+        linkListener = nil
     }
 
     func shouldPostAnalytics() -> Bool {
@@ -160,6 +176,7 @@ extension UIViewController {
 
     //MARK: Updates
     func checkForUpdatesIfNeeded() {
+        // app updates
         Updater.checkForUpdateIfNeeded { (version) in
             guard let newVersion = version else {
                 return
@@ -182,7 +199,67 @@ extension UIViewController {
             
             self.present(alertController, animated: true, completion: nil)
         }
+        
+        // team updates
+        if IdentityManager.hasTeam() && TeamUpdater.shouldCheck {
+            TeamUpdater.checkForUpdate { result in
+                log("did update team: \(result)")
+            }
+        }
     }
     
+    //MARK: React to links
+    func onListen(link:Link) {
+        guard link.type == .kr else {
+            log("invalid link type presented: \(link.type)")
+            return
+        }
+        
+        
+        switch link.command {
+        case .joinTeam:
+            
+            do {
+                if let team = try IdentityManager.getTeamIdentity()?.team() {
+                    self.showWarning(title: "Already on team \(team.info.name)", body: "Kryptonite only supports being on one team. Multi-team support is coming soon!")
+                    return
+                }
+
+            } catch {
+                self.showWarning(title: "Error", body: "Couldn't get team information. Error: \(error).")
+                return
+            }
+            
+            guard   link.path.count == 3
+            else {
+                self.showWarning(title: "Error", body: "Invalid team invitation.")
+                return
+            }
+            
+            var teamInvite:TeamInvite
+            do {
+                teamInvite = try TeamInvite(path: link.path)
+            } catch {
+                self.showWarning(title: "Error", body: "Invalid team invitation encoding.")
+                return
+            }
+
+            guard let teamLoadController = Resources.Storyboard.Team.instantiateViewController(withIdentifier: "TeamLoadController") as? TeamLoadController
+            else {
+                log("unknown team invitiation controller")
+                return
+            }
+            
+            teamLoadController.modalTransitionStyle = UIModalTransitionStyle.coverVertical
+            teamLoadController.modalPresentationStyle = UIModalPresentationStyle.overFullScreen
+
+            teamLoadController.joinType = .invite(teamInvite)
+            
+            dispatchMain {
+                self.present(teamLoadController, animated: true, completion: nil)
+            }
+        }
+    }
+
    
 }

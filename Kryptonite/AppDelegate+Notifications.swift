@@ -53,11 +53,7 @@ extension AppDelegate {
             
         {
             // if approval notification
-            do {
-                try TransportControl.shared.handle(medium: .remoteNotification, with: request, for: session)
-            } catch {
-                log("handle failed \(error)", .error)
-            }
+            TransportControl.shared.handle(medium: .remoteNotification, with: request, for: session)
         }
         
     }
@@ -111,7 +107,7 @@ extension AppDelegate {
             else {
                 log("nil identifier", .error)
                 Silo.shared.removePending(request: request, for: session)
-                try? TransportControl.shared.handle(medium: .remoteNotification, with: request, for: session)
+                TransportControl.shared.handle(medium: .remoteNotification, with: request, for: session)
                 completionHandler()
                 return
         }
@@ -124,9 +120,10 @@ extension AppDelegate {
             Analytics.postEvent(category: request.body.analyticsCategory, action: "background approve", label: "once")
             
         case Policy.ActionIdentifier.temporary:
-            Policy.allow(session: session, for: Policy.Interval.threeHours)
-            Analytics.postEvent(category: request.body.analyticsCategory, action: "background approve", label: "time", value: UInt(Policy.Interval.threeHours.rawValue))
-            
+            let interval = Policy.temporaryApprovalInterval
+            Policy.allow(session: session, for: interval.value)
+            Analytics.postEvent(category: request.body.analyticsCategory, action: "background approve", label: "time", value: UInt(interval.value))
+
         case Policy.ActionIdentifier.reject:
             Policy.set(needsUserApproval: true, for: session) // override setting incase app terminated
             Analytics.postEvent(category: request.body.analyticsCategory, action: "background reject")

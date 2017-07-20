@@ -7,6 +7,7 @@
 //
 
 import XCTest
+@testable import Kryptonite
 
 class HostAuthTestCase {
     let pk: String
@@ -76,9 +77,9 @@ class SSHHostVerificationTests: XCTestCase {
                 data: try testCase.data.fromBase64(),
                 fingerprint: "",
                 hostAuth: HostAuth(
-                    hostKey: testCase.pk,
-                    signature: testCase.sig,
-                    hostNames: []
+                    hostKey: try! testCase.pk.fromBase64(),
+                    signature: try! testCase.sig.fromBase64(),
+                    hostNames: [""]
                     )
             )
             XCTAssert(signRequest.user == "git")

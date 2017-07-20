@@ -8,27 +8,23 @@
 
 import Foundation
 
-
-
-
 enum LinkType:String {
     case kr = "kr"
 }
+            
+enum LinkError:Error {
+    case invalidType
+    case invalidCommand
+}
 
 enum LinkCommand:String {
-    case share = "share"
-    case none = ""
+    case joinTeam = "join_team"
     
-    static let all = [share]
-
-    
-    init(url:URL) {
-        guard
-            let commandParam = url.queryItems()["c"],
-            let command = LinkCommand(rawValue: commandParam)
+    init(url:URL) throws {
+        guard   let commandString = url.host,
+                let command = LinkCommand(rawValue: commandString)
         else {
-            self = .none
-            return
+            throw LinkError.invalidCommand
         }
         
         self = command
@@ -38,22 +34,25 @@ enum LinkCommand:String {
 class Link {
     let type:LinkType
     let command:LinkCommand
+    let path:[String]
     let properties:[String:String]
- 
+    
     let url:URL
     
-    init?(url:URL) {
+    init(url:URL) throws {
         guard
             let scheme = url.scheme,
             let type = LinkType(rawValue: scheme)
         else {
-            return nil
+            throw LinkError.invalidType
         }
         
         self.url = url
         self.type = type
-        self.command = LinkCommand(url: url)
+        self.command = try LinkCommand(url: url)
         self.properties = url.queryItems()
+        self.path = url.pathComponents.filter({ $0 != "/" }).filter({ !$0.isEmpty })
+        log(self.path)
     }
     
     static var notificationName:NSNotification.Name {
@@ -62,9 +61,6 @@ class Link {
 
 }
 
-extension Link {
-
-}
 
 class LinkListener {
     var onListen:(Link)->()
@@ -89,6 +85,7 @@ class LinkListener {
     
     @objc dynamic func didReceive(note:NSNotification) {
         guard let link = note.object as? Link else {
+            log("empty link in link notification", .error)
             return
         }
         

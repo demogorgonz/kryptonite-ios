@@ -9,56 +9,50 @@
 import Foundation
 import PGPFormat
 
-enum KeyTag:String {
-    case me = "me"
-    case peer = "peer"
-}
-
-private let KrMeDataKey = "kr_me_email"
-
-enum KeyManagerError:Error {
-    case keyDoesNotExist
-}
-
 class KeyManager {
     
     var keyPair:KeyPair
+    
+    enum Storage:String {
+        case tag = "me"        
+        var key:String { return self.rawValue }
+    }
     
     init(_ keyPair:KeyPair) {
         self.keyPair = keyPair
     }
     
+    private static let mutex = Mutex()
+
+    enum Errors:Error {
+        case keyDoesNotExist
+    }
+    
     class func sharedInstance() throws -> KeyManager {
         do {
-            if let rsaKP = try RSAKeyPair.load(KeyTag.me.rawValue) {
+            if let rsaKP = try RSAKeyPair.load(Storage.tag.key) {
                 return KeyManager(rsaKP)
             }
-            else if let edKP = try Ed25519KeyPair.load(KeyTag.me.rawValue) {
+            else if let edKP = try Ed25519KeyPair.load(Storage.tag.key) {
                 return KeyManager(edKP)
             }
             else {
-                throw KeyManagerError.keyDoesNotExist
-            }
-            
-
-            /*let loadStart = Date().timeIntervalSince1970
-            let loadEnd = Date().timeIntervalSince1970
-            log("keypair load took \(loadEnd - loadStart) seconds")*/
-            
+                throw Errors.keyDoesNotExist
+            }                        
         }
         catch let e {
             log("Crypto Load error -> \(e)", LogType.warning)
             throw e
         }
     }
-    
+
     class func generateKeyPair(type:KeyType) throws {
         do {
             switch type {
             case .RSA:
-                let _ = try RSAKeyPair.generate(KeyTag.me.rawValue)
+                let _ = try RSAKeyPair.generate(Storage.tag.key)
             case .Ed25519:
-                let _ = try Ed25519KeyPair.generate(KeyTag.me.rawValue)
+                let _ = try Ed25519KeyPair.generate(Storage.tag.key)
             }
         }
         catch let e {
@@ -71,27 +65,27 @@ class KeyManager {
         
         // destroy rsa
         do {
-            try RSAKeyPair.destroy(KeyTag.me.rawValue)
+            try RSAKeyPair.destroy(Storage.tag.key)
         } catch {
             log("failed to destroy RSA Keypair: \(error)")
         }
         
         // destroy ed
         do {
-            try Ed25519KeyPair.destroy(KeyTag.me.rawValue)
+            try Ed25519KeyPair.destroy(Storage.tag.key)
         } catch {
             log("failed to destroy Ed25519 Keypair: \(error)")
         }
         
         // destroy PGP public entities
         do {
-            try KeychainStorage().delete(key: PGPPublicKeyStorage.created.key(tag: KeyTag.me))
+            try KeychainStorage().delete(key: PGPPublicKeyStorage.created.key(tag: Storage.tag.key))
         } catch {
             log("failed to destroy PGP created date: \(error)")
         }
         
         do {
-            try KeychainStorage().delete(key: PGPPublicKeyStorage.userIDs.key(tag: KeyTag.me))
+            try KeychainStorage().delete(key: PGPPublicKeyStorage.userIDs.key(tag: Storage.tag.key))
         } catch {
             log("failed to destroy PGP userIDs: \(error)")
         }
@@ -99,10 +93,10 @@ class KeyManager {
     
     class func hasKey() -> Bool {
         do {
-            if let _ = try RSAKeyPair.load(KeyTag.me.rawValue) {
+            if let _ = try RSAKeyPair.load(Storage.tag.key) {
                 log("has rsa key is true")
                 return true
-            } else if let _ = try Ed25519KeyPair.load(KeyTag.me.rawValue) {
+            } else if let _ = try Ed25519KeyPair.load(Storage.tag.key) {
                 log("has ed25519 key is true")
                 return true
             }
@@ -110,49 +104,20 @@ class KeyManager {
         } catch {}
 
         return false
-    }
-    
-    func getMe() throws -> String {
-        return try KeychainStorage().get(key: KrMeDataKey)
-    }
-    
-    class func setMe(email:String) {
-        do {
-            try KeychainStorage().set(key: KrMeDataKey, value: email)
-        } catch {
-            log("failed to store `me` email: \(error)", .error)
-        }
-        
-        dispatchAsync { Analytics.sendEmailToTeamsIfNeeded(email: email) }
-    }
-    
-    class func clearMe() {
-        do {
-            try KeychainStorage().delete(key: KrMeDataKey)
-        } catch {
-            log("failed to delete `me` email: \(error)", .error)
-        }
-    }
-    
+    }    
 }
 
 /**
-    Extend KeyManager and KeyTag to pull out the same self-signed PGP Public Key
+    Extend KeyManager to pull out the same self-signed PGP Public Key
     for the current keypair.
  */
-
-extension KeyTag {
-    var publicPGPStorageKey:String {
-        return "pgpkey.public.\(self.rawValue)"
-    }
-}
 
 enum PGPPublicKeyStorage:String {
     case created         = "created"
     case userIDs         = "userid-list"
     
-    func key(tag:KeyTag) -> String {
-        return "pgp.pub.\(tag.rawValue).\(self.rawValue)"
+    func key(tag:String) -> String {
+        return "pgp.pub.\(tag).\(self.rawValue)"
     }
 }
 extension KeyManager {
@@ -165,7 +130,7 @@ extension KeyManager {
         // get the created time or instantiate it and save it
         var created:Date
         do {
-            guard let savedCreated = Double(try KeychainStorage().get(key: PGPPublicKeyStorage.created.key(tag: .me)))
+            guard let savedCreated = Double(try KeychainStorage().get(key: PGPPublicKeyStorage.created.key(tag: Storage.tag.key)))
                 else {
                     throw KeychainStorageError.notFound
             }
@@ -177,7 +142,7 @@ extension KeyManager {
             // shift to 15m ago to avoid clock skew errors of a "future" key
             created = Date().shifted(by: -Properties.allowedClockSkew)
             
-            try KeychainStorage().set(key: PGPPublicKeyStorage.created.key(tag: .me), value: "\(created.timeIntervalSince1970)")
+            try KeychainStorage().set(key: PGPPublicKeyStorage.created.key(tag: Storage.tag.key), value: "\(created.timeIntervalSince1970)")
             
             log("Set the PGP public key created date to: \(created)", .warning)
         }
@@ -186,15 +151,20 @@ extension KeyManager {
         return try self.keyPair.exportAsciiArmoredPGPPublicKey(for: userIds, created: created)
     }
     
+    var pgpUserIDs:[String] {
+        let userIdList = (try? UserIDList(jsonString: KeychainStorage().get(key: PGPPublicKeyStorage.userIDs.key(tag: Storage.tag.key)))) ?? UserIDList.empty
+        return userIdList.ids
+    }
+
     func updatePGPUserIDPreferences(for identity:String) -> [String] {
         
-        var userIdList = (try? UserIDList(jsonString: KeychainStorage().get(key: PGPPublicKeyStorage.userIDs.key(tag: .me)))) ?? UserIDList.empty
+        var userIdList = (try? UserIDList(jsonString: KeychainStorage().get(key: PGPPublicKeyStorage.userIDs.key(tag: Storage.tag.key)))) ?? UserIDList.empty
         
         // add new identity
         userIdList = userIdList.by(updating: identity)
 
         do {
-            try KeychainStorage().set(key: PGPPublicKeyStorage.userIDs.key(tag: .me), value: userIdList.jsonString())
+            try KeychainStorage().set(key: PGPPublicKeyStorage.userIDs.key(tag: Storage.tag.key), value: userIdList.jsonString())
             return userIdList.ids
             
         } catch {
@@ -206,7 +176,7 @@ extension KeyManager {
     func getPGPPublicKeyID() throws -> Data {
         
         // get the created time
-        guard let pgpPublicKeyCreated = Double(try KeychainStorage().get(key: PGPPublicKeyStorage.created.key(tag: .me)))
+        guard let pgpPublicKeyCreated = Double(try KeychainStorage().get(key: PGPPublicKeyStorage.created.key(tag: Storage.tag.key)))
         else {
             throw KeychainStorageError.notFound
         }

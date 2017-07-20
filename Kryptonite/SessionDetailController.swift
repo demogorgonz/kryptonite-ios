@@ -187,6 +187,8 @@ class SessionDetailController: KRBaseTableController, UITextFieldDelegate {
         }
         
         UIImpactFeedbackGenerator(style: UIImpactFeedbackStyle.heavy).impactOccurred()
+        
+        let temporaryInterval = Policy.temporaryApprovalInterval
 
         switch approvalControlType {
         case .on:
@@ -194,15 +196,15 @@ class SessionDetailController: KRBaseTableController, UITextFieldDelegate {
             Policy.set(needsUserApproval: true, for: session)
 
         case .timed:
-            Analytics.postEvent(category: "manual approval", action: "time", value: UInt(Policy.Interval.threeHours.rawValue))
-            Policy.allow(session: session, for: Policy.Interval.threeHours)
+            Analytics.postEvent(category: "manual approval", action: "time", value: UInt(temporaryInterval.value))
+            Policy.allow(session: session, for: temporaryInterval.value)
 
         case .off:
             Analytics.postEvent(category: "manual approval", action: String(false))
             Policy.set(needsUserApproval: false, for: session)
         }
         
-        approvalSegmentedControl.setTitle("Don't ask for 3hrs", forSegmentAt: ApprovalControl.timed.rawValue)
+        approvalSegmentedControl.setTitle("Don't ask for \(temporaryInterval.short)", forSegmentAt: ApprovalControl.timed.rawValue)
     }
 
     @IBAction func unknownHostApprovalChanged(sender:UISwitch) {
@@ -241,6 +243,7 @@ class SessionDetailController: KRBaseTableController, UITextFieldDelegate {
     func updateApprovalControl(session:Session) {
         if Policy.needsUserApproval(for: session)  {
             approvalSegmentedControl.selectedSegmentIndex = ApprovalControl.on.rawValue
+            approvalSegmentedControl.setTitle("Don't ask for \(Policy.temporaryApprovalInterval.short)", forSegmentAt: ApprovalControl.timed.rawValue)
         }
         else if let remaining = Policy.approvalTimeRemaining(for: session) {
             approvalSegmentedControl.selectedSegmentIndex = 1
@@ -248,6 +251,7 @@ class SessionDetailController: KRBaseTableController, UITextFieldDelegate {
         }
         else {
             approvalSegmentedControl.selectedSegmentIndex = ApprovalControl.off.rawValue
+            approvalSegmentedControl.setTitle("Don't ask for \(Policy.temporaryApprovalInterval.short)", forSegmentAt: ApprovalControl.timed.rawValue)
         }
     }
     

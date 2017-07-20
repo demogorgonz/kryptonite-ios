@@ -21,6 +21,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     
     func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey : Any]? = nil) -> Bool {
 
+
         Analytics.migrateOldIDIfExists()
         Analytics.migrateAnalyticsDisabled()
                 
@@ -35,7 +36,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
                 
         // check for link
         if  let url = launchOptions?[UIApplicationLaunchOptionsKey.url] as? URL,
-            let link = Link(url: url)
+            let link = try? Link(url: url)
         {
             pendingLink = link
         }
@@ -90,7 +91,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
             }
             
             do {
-                try KeychainStorage().set(key: KR_ENDPOINT_ARN_KEY, value: arn)
+                try KeychainStorage().set(key: Constants.endpointARNStorageKey, value: arn)
             } catch {
                 log("Could not save push ARN", .error)
             }
@@ -109,19 +110,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
         log("Push registration failed!", .error)
     }
     
-    
     //MARK: Links
     
     func application(_ app: UIApplication, open url: URL, options: [UIApplicationOpenURLOptionsKey : Any] = [:]) -> Bool {
         
-        guard let link = Link(url: url) else {
-            log("invalid kr url: \(url)", .error)
+        do {
+            self.pendingLink = try Link(url: url)
+            NotificationCenter.default.post(name: Link.notificationName, object: self.pendingLink, userInfo: nil)
+            return true
+        } catch {
+            log("invalid link: \(url.absoluteString)", .error)
             return false
         }
-        
-        self.pendingLink = link
-        NotificationCenter.default.post(name: Link.notificationName, object: link, userInfo: nil)
-        return true
     }
     
     //MARK: Update Checking in the Background
@@ -149,8 +149,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     func applicationWillResignActive(_ application: UIApplication) {
         // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
         // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
-        
-        LogManager.shared.saveContext()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
@@ -180,9 +178,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
             Policy.requestUserAuthorization(session: pending.session, request: pending.request)
         }
 
+        // if team policy set: refresh approval category on notifications
+        if  let team = (try? IdentityManager.getTeamIdentity()?.team()) as? Team,
+            let _ = team.policy.temporaryApprovalSeconds
+        {
+            self.registerPushNotifications()
+        }
+ 
         
         //  Send email again if not sent succesfully
-        if let email = try? KeyManager.sharedInstance().getMe() {
+        if let email = try? IdentityManager.getMe() {
             dispatchAsync { Analytics.sendEmailToTeamsIfNeeded(email: email) }
         }
     }
@@ -190,7 +195,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterD
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
         TransportControl.shared.willEnterBackground()
-        LogManager.shared.saveContext()
     }
 
 

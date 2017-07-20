@@ -53,7 +53,7 @@ class AboutController: KRBaseController {
     }
     
     @IBAction func exportTapped() {
-        let logDBPath = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_SECURITY_ID)!.appendingPathComponent("logs").appendingPathComponent("KryptoniteCoreDataStore.sqlite")
+        let logDBPath = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupSecurityID)!.appendingPathComponent("logs").appendingPathComponent("KryptoniteCoreDataStore.sqlite")
         
         let activityController = UIActivityViewController(activityItems: [logDBPath
             ], applicationActivities: nil)
@@ -88,7 +88,7 @@ class AboutController: KRBaseController {
             Analytics.postEvent(category: "keypair", action: "destroy")
             
             let _ = KeyManager.destroyKeyPair()
-            KeyManager.clearMe()
+            IdentityManager.clearMe()
             SessionManager.shared.destroy()
             
             dispatchMain {
@@ -142,7 +142,7 @@ class AboutController: KRBaseController {
         deviceInfo += "Model: \(UIDevice.current.model)\n"
         deviceInfo += "SystemVersion: \(UIDevice.current.systemVersion)\n"
         deviceInfo += "SystemName: \(UIDevice.current.systemName)\n"
-        deviceInfo += "Identifier: \((try? KeychainStorage().get(key: KR_ENDPOINT_ARN_KEY)) ?? "unknown")\n"
+        deviceInfo += "Identifier: \(API.endpointARN ?? "unknown")\n"
         deviceInfo += "-----------"
         //
         mailDialogue.setMessageBody(deviceInfo, isHTML: false)

@@ -11,11 +11,6 @@ import JSON
 import AwesomeCache
 
 
-struct InvalidRequestTimeError:Error{}
-struct RequestPendingError:Error{}
-struct ResponseNotNeededError:Error{}
-struct SiloCacheCreationError:Error{}
-
 struct UserRejectedError:Error, CustomDebugStringConvertible {
     static let rejectedConstant = "rejected"
     
@@ -65,10 +60,16 @@ class Silo {
     }
     
     lazy var sharedDirectory:URL? = {
-        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP_SECURITY_ID)?.appendingPathComponent("cache")
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Constants.appGroupSecurityID)?.appendingPathComponent("cache")
     }()
-
-
+    
+    enum Errors:Error {
+        case invalidRequestTime
+        case requestPending
+        case responseNotNeeded
+        case siloCacheCreation
+        case noTeamIdentity
+    }
     
     //MARK: Handle Logic
     func handle(request:Request, session:Session, communicationMedium: CommunicationMedium, completionHandler: (()->Void)? = nil) throws {
@@ -83,7 +84,7 @@ class Silo {
         // ensure request has not expired
         let now = Date().timeIntervalSince1970
         if abs(now - Double(request.unixSeconds)) > Properties.requestTimeTolerance {
-            throw InvalidRequestTimeError()
+            throw Silo.Errors.invalidRequestTime
         }
         
         // check if the request has already been received and cached
@@ -94,8 +95,13 @@ class Silo {
             try TransportControl.shared.send(response, for: session, completionHandler: completionHandler)
             return
         }
-
-
+        
+        // check if the request has already been received, but is still pending
+        pendingRequests?.removeExpiredObjects()
+        if pendingRequests?.object(forKey: CacheKey(session, request)) != nil {
+            throw Silo.Errors.requestPending
+        }
+                
         // decide if request body can be responded to immediately
         // or doesn't need response,
         // or needs user's approval first
@@ -111,9 +117,16 @@ class Silo {
         case .noOp:
             return
             
-        case .ssh where Policy.needsUserApproval(for: session, and: request.body),
+        case .decryptLog,
+             .teamOperation,
+             .readTeam,
+             .createTeam,
+             .ssh where Policy.needsUserApproval(for: session, and: request.body),
              .git where Policy.needsUserApproval(for: session, and: request.body):
             
+            // record this request as pending
+            pendingRequests?.setObject("", forKey: CacheKey(session, request), expires: .seconds(Properties.requestTimeTolerance * 2))
+
             try handleRequestRequiresApproval(request: request, session: session, communicationMedium: communicationMedium, completionHandler: completionHandler)
             return
             
@@ -148,7 +161,7 @@ class Silo {
                 Policy.notifyUser(session: session, request: request)
             }
 
-        case .me, .ack, .unpair:
+        case .decryptLog, .teamOperation, .readTeam, .createTeam, .me, .ack, .unpair:
             break
         }
         
@@ -156,18 +169,13 @@ class Silo {
     }
 
     func handleRequestRequiresApproval(request: Request, session: Session, communicationMedium: CommunicationMedium, completionHandler: (() -> ())?) throws {
-        pendingRequests?.removeExpiredObjects()
-        if pendingRequests?.object(forKey: CacheKey(session, request)) != nil {
-            throw RequestPendingError()
-        }
-        pendingRequests?.setObject("", forKey: CacheKey(session, request), expires: .seconds(Properties.requestTimeTolerance * 2))
         
         Policy.addPendingAuthorization(session: session, request: request)
         Policy.requestUserAuthorization(session: session, request: request)
         
         if request.sendACK {
-            let arn = (try? KeychainStorage().get(key: KR_ENDPOINT_ARN_KEY)) ?? ""
-            let ack = Response(requestID: request.id, endpoint: arn, body: .ack(AckResponse()), approvedUntil: Policy.approvedUntilUnixSeconds(for: session), trackingID: (Analytics.enabled ? Analytics.userID : "disabled"))
+            let arn = API.endpointARN ?? ""
+            let ack = Response(requestID: request.id, endpoint: arn, body: .ack(.ok(AckResponse())), approvedUntil: Policy.approvedUntilUnixSeconds(for: session), trackingID: (Analytics.enabled ? Analytics.userID : "disabled"))
             do {
                 try TransportControl.shared.send(ack, for: session)
             } catch (let e) {
@@ -187,6 +195,19 @@ class Silo {
         pendingRequests?.removeObject(forKey: CacheKey(session, request))
     }
     
+    func isPending(request:Request, for session:Session) -> Bool {
+        mutex.lock()
+        defer { mutex.unlock() }
+        
+        pendingRequests?.removeExpiredObjects()
+        if pendingRequests?.object(forKey: CacheKey(session, request)) != nil {
+            return true
+        }
+        
+        return false
+    }
+
+    
     // MARK: Response
     
     func lockResponseFor(request:Request, session:Session, signatureAllowed:Bool) throws -> Response {
@@ -202,6 +223,7 @@ class Silo {
         
         // the response type
         var responseType:ResponseBody
+        var auditLog:Audit.Log?
         
         // craft a response to the request type
         // given the user's approval: `signatureAllowed`
@@ -210,15 +232,25 @@ class Silo {
             let kp = try KeyManager.sharedInstance()
             
             if try kp.keyPair.publicKey.fingerprint() != signRequest.fingerprint.fromBase64() {
-                throw KeyManagerError.keyDoesNotExist
+                throw KeyManager.Errors.keyDoesNotExist
             }
             
-            var sig:String?
-            var err:String?
+            var result:ResponseResult<SSHSignResponse>
+            var sshAuditLogResult:Audit.SSHSignature.Result
+            
             do {
                 
                 if signatureAllowed {
                     
+                    // team known hosts
+                    // if team exists then check for pinned known hosts
+                    if  let verifiedHostAuth = signRequest.verifiedHostAuth,
+                        let teamIdentity = (try? IdentityManager.getTeamIdentity()) as? TeamIdentity
+                    {
+                        try teamIdentity.dataManager.check(verifiedHost: verifiedHostAuth)
+                    }
+                    
+                    // local known hosts
                     // if host auth provided, check known hosts
                     // fails in invalid signature -or- hostname not provided
                     if let verifiedHostAuth = signRequest.verifiedHostAuth {
@@ -226,37 +258,54 @@ class Silo {
                     }
                     
                     // only place where signature should occur
-                    sig = try kp.keyPair.signAppendingSSHWirePubkeyToPayload(data: signRequest.data, digestType: signRequest.digestType.based(on: request.version))
+                    let signature = try kp.keyPair.signAppendingSSHWirePubkeyToPayload(data: signRequest.data, digestType: signRequest.digestType.based(on: request.version))
                     
-                    LogManager.shared.save(theLog: SSHSignatureLog(session: session.id, hostAuth: signRequest.verifiedHostAuth, signature: sig ?? "<err>", displayName: signRequest.display), deviceName: session.pairing.name)
+                    result = .ok(SSHSignResponse(signature: signature.toBase64()))
+                    
+                    sshAuditLogResult = .signature(signature)
+                    
                 } else {
                     throw UserRejectedError()
                 }
                 
             }
             catch let error as UserRejectedError {
-                LogManager.shared.save(theLog: SSHSignatureLog(session: session.id, hostAuth: signRequest.verifiedHostAuth, signature: "request failed", displayName: "rejected: \(signRequest.display)"), deviceName: session.pairing.name)
-                err = "\(error)"
+                result = .error("\(error)")
+                sshAuditLogResult = .userRejected
+
             }
             catch let error as HostMistmatchError {
-                LogManager.shared.save(theLog: SSHSignatureLog(session: session.id, hostAuth: signRequest.verifiedHostAuth, signature: "request failed", displayName: "rejected: \(error)"), deviceName: session.pairing.name)
-                err = "\(error)"
+                result = .error("\(error)")
+                sshAuditLogResult = .hostMismatch(error.expectedPublicKeys)
             }
             catch {
-                err = "\(error)"
+                result = .error("\(error)")
+                sshAuditLogResult = .error("\(error)")
             }
             
-            responseType = .ssh(SignResponse(sig: sig, err: err))
+            //create the audit log
+            let logBody = Audit.LogBody.ssh(Audit.SSHSignature(user: signRequest.user,
+                                                               verifiedHostAuth: signRequest.verifiedHostAuth ,
+                                                               sessionData: signRequest.session,
+                                                               result: sshAuditLogResult))
+            
+            auditLog = Audit.Log(session: Audit.Session(deviceName: session.pairing.name,
+                                                        workstationPublicKeyDoubleHash: session.pairing.workstationPublicKeyDoubleHash),
+                                 body: logBody)
+            
+            // set the response
+            responseType = .ssh(result)
 
             
         case .git(let gitSignRequest):
-            var sig:String?
-            var err:String?
+            var result:ResponseResult<GitSignResponse>
+            var logBody:Audit.LogBody
+            
             do {
                 if signatureAllowed {
                     // only place where git signature should occur
-                    
                     let keyManager = try KeyManager.sharedInstance()
+                    
                     let keyID = try keyManager.getPGPPublicKeyID()                    
                     let _ = keyManager.updatePGPUserIDPreferences(for: gitSignRequest.userId)
 
@@ -264,37 +313,48 @@ class Silo {
                     case .commit(let commit):
                         
                         let asciiArmoredSig = try keyManager.keyPair.signGitCommit(with: commit, keyID: keyID)
-                        let signature = asciiArmoredSig.packetData.toBase64()
-                        sig = signature
+                        let signature = asciiArmoredSig.packetData
+                        result = .ok(GitSignResponse(signature: signature.toBase64()))
                         
-                        let commitHash = try commit.commitHash(asciiArmoredSignature: asciiArmoredSig.toString()).hex
-                        LogManager.shared.save(theLog: CommitSignatureLog(session: session.id, signature: signature, commitHash: commitHash, commit: commit), deviceName: session.pairing.name)
+                        logBody = .gitCommit(Audit.GitCommitSignature(commitInfo: commit, result: .signature(signature)))
                         
                     case .tag(let tag):
                         
-                        let signature = try keyManager.keyPair.signGitTag(with: tag, keyID: keyID).packetData.toBase64()
-                        sig = signature
-                        
-                        LogManager.shared.save(theLog: TagSignatureLog(session: session.id, signature: signature, tag: tag), deviceName: session.pairing.name)
+                        let signature = try keyManager.keyPair.signGitTag(with: tag, keyID: keyID).packetData
+                        result = .ok(GitSignResponse(signature: signature.toBase64()))
+
+                        logBody = .gitTag(Audit.GitTagSignature(tagInfo: tag, result: .signature(signature)))
                     }
                     
                 } else {
-                    
                     switch gitSignRequest.git {
                     case .commit(let commit):
-                        LogManager.shared.save(theLog: CommitSignatureLog(session: session.id, signature: CommitSignatureLog.rejectedConstant, commitHash: "", commit: commit), deviceName: session.pairing.name)
+                        logBody = .gitCommit(Audit.GitCommitSignature(commitInfo: commit, result: .userRejected))
                     case .tag(let tag):
-                        LogManager.shared.save(theLog: TagSignatureLog(session: session.id, signature: TagSignatureLog.rejectedConstant, tag: tag), deviceName: session.pairing.name)
+                        logBody = .gitTag(Audit.GitTagSignature(tagInfo: tag, result: .userRejected))
                     }
                     
                     throw UserRejectedError()
                 }
                 
             }  catch {
-                err = "\(error)"
+                result = .error("\(error)")
+                
+                switch gitSignRequest.git {
+                case .commit(let commit):
+                    logBody = .gitCommit(Audit.GitCommitSignature(commitInfo: commit, result: .error("\(error)")))
+                case .tag(let tag):
+                    logBody = .gitTag(Audit.GitTagSignature(tagInfo: tag, result: .error("\(error)")))
+                }
             }
             
-            responseType = .git(GitSignResponse(sig: sig, err: err))
+            // create the audit log
+            auditLog = Audit.Log(session: Audit.Session(deviceName: session.pairing.name,
+                                                        workstationPublicKeyDoubleHash: session.pairing.workstationPublicKeyDoubleHash),
+                                 body: logBody)
+
+            // set the response 
+            responseType = .git(result)
             
         case .me(let meRequest):
             let keyManager = try KeyManager.sharedInstance()
@@ -303,23 +363,136 @@ class Silo {
             if let pgpUserID = meRequest.pgpUserId {
                 pgpPublicKey = try keyManager.loadPGPPublicKey(for: pgpUserID).packetData
             }
-            
-            responseType = .me(MeResponse(me: MeResponse.Me(email: try keyManager.getMe(), publicKeyWire: try keyManager.keyPair.publicKey.wireFormat(), pgpPublicKey: pgpPublicKey)))
 
-        case .noOp, .unpair:
-            throw ResponseNotNeededError()
+            var teamCheckpoint:TeamCheckpoint?
+            if let identity = try IdentityManager.getTeamIdentity() {
+                teamCheckpoint =  TeamCheckpoint(publicKey: identity.keyPair.publicKey,
+                                                 teamPublicKey: identity.initialTeamPublicKey,
+                                                 lastBlockHash: identity.checkpoint)
+
+            }
+            
+            let me = MeResponse(me: MeResponse.Me(email: try IdentityManager.getMe(),
+                                                  publicKeyWire: try keyManager.keyPair.publicKey.wireFormat(),
+                                                  pgpPublicKey: pgpPublicKey,
+                                                  teamCheckpoint: teamCheckpoint))
+            responseType = .me(.ok(me))
+            
+        case .readTeam(let readTeamRequest):
+            
+            guard let teamIdentity = try IdentityManager.getTeamIdentity() else {
+                throw Errors.noTeamIdentity
+            }
+            
+            guard signatureAllowed else {
+                responseType = .readTeam(.error("rejected"))
+                break
+            }
+            
+            do {
+                //TODO: decide exp time
+                let expiration = Date().timeIntervalSince1970 + TimeSeconds.hour.multiplied(by: 1)
+                let timeReadToken = ReadToken.time(TimeToken(readerPublicKey: readTeamRequest.publicKey, expiration: UInt64(expiration)))
+                let timeReadTokenData = try timeReadToken.jsonData()
+                
+                guard let signature = KRSodium.instance().sign.signature(message: timeReadTokenData, secretKey: teamIdentity.keyPair.secretKey)
+                    else {
+                        throw CryptoError.sign(.Ed25519, nil)
+                }
+                
+
+                let timeReadTokenString = try timeReadTokenData.utf8String()
+                
+                responseType = .readTeam(.ok(ReadTeamResponse(signerPublicKey: teamIdentity.keyPair.publicKey,
+                                                              token: timeReadTokenString,
+                                                              signature: signature)))
+
+            } catch {
+                responseType = .readTeam(.error("\(error)"))
+            }
+        case .teamOperation(let teamOperationRequest):
+            guard IdentityManager.hasTeam() else {
+                throw Errors.noTeamIdentity
+            }
+            
+            guard signatureAllowed else {
+                responseType = .teamOperation(.error("rejected"))
+                break
+            }
+            
+            do {
+                // create the new block
+                let (service, response) = try TeamService.shared().responseFor(requestableOperation: teamOperationRequest.operation)
+                
+                // commit team changes
+                try IdentityManager.commitTeamChanges(identity: service.teamIdentity)
+                
+                // return the `ok` response
+                responseType = .teamOperation(.ok(response))
+            } catch {
+                responseType = .teamOperation(.error("\(error)"))
+            }
+            
+        case .decryptLog(let decryptLogRequest):
+            guard let teamIdentity:TeamIdentity = try IdentityManager.getTeamIdentity() else {
+                throw Errors.noTeamIdentity
+            }
+            
+            // ensure we're allowed to decrypt
+            guard signatureAllowed else {
+                responseType = .decryptLog(.error("rejected"))
+                break
+            }
+            
+            guard decryptLogRequest.wrappedKey.publicKey == teamIdentity.encryptionKeyPair.publicKey else {
+                responseType = .decryptLog(.error("public key mismatch"))
+                break
+            }
+            
+            guard let unwrappedKey = KRSodium.instance().box.open(anonymousCipherText: decryptLogRequest.wrappedKey.ciphertext,
+                                                                  recipientPublicKey: teamIdentity.encryptionKeyPair.publicKey,
+                                                                  recipientSecretKey: teamIdentity.encryptionKeyPair.secretKey)
+            else {
+                    responseType = .decryptLog(.error("invalid ciphertext"))
+                    break
+            }
+            
+            responseType = .decryptLog(.ok(LogDecryptionResponse(logDecryptionKey: unwrappedKey)))
+        
+        case .createTeam, .noOp, .unpair:
+            throw Silo.Errors.responseNotNeeded
         }
         
-        let arn = (try? KeychainStorage().get(key: KR_ENDPOINT_ARN_KEY)) ?? ""
+        // save the audit log if we have one
+        if let auditLog = auditLog {
+            
+            // local
+            LogManager.shared.save(auditLog: auditLog, sessionID: session.id)
+            
+            // remote only if we have a team identity
+            if var teamIdentity:TeamIdentity = try IdentityManager.getTeamIdentity() {
+                do {
+                    // try to write & save a team audit log
+                    try teamIdentity.writeAndSendLog(auditLog: auditLog)
+                } catch {
+                    log("error saving team audit log: \(error)", .error)
+                }
+            }
+        }
         
-        let response = Response(requestID: request.id, endpoint: arn, body: responseType, approvedUntil: Policy.approvedUntilUnixSeconds(for: session), trackingID: (Analytics.enabled ? Analytics.userID : "disabled"))
+        // create the response and return it
+        let arn = API.endpointARN ?? ""
         
-        let responseData = try response.jsonData() as NSData
+        let response = Response(requestID: request.id,
+                                endpoint: arn,
+                                body: responseType,
+                                approvedUntil: Policy.approvedUntilUnixSeconds(for: session),
+                                trackingID: (Analytics.enabled ? Analytics.userID : "disabled"))
         
-        requestCache?.setObject(responseData, forKey: CacheKey(session, request), expires: .seconds(Properties.requestTimeTolerance * 2))
+        let responseData = try response.jsonData()
+        requestCache?.setObject(responseData as NSData, forKey: CacheKey(session, request), expires: .seconds(Properties.requestTimeTolerance * 2))
         
         return response
-
     }
     
     func cachedResponse(for session:Session,with request:Request) -> Response? {
