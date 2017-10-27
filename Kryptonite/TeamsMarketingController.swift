@@ -37,7 +37,7 @@ class TeamsCreateController:KRBaseController, UITextFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.navigationItem.setKrTeamsLogo()
+        self.navigationItem.setKrLogo()
 
         createButton.layer.shadowColor = UIColor.black.cgColor
         createButton.layer.shadowOffset = CGSize(width: 0, height: 0)

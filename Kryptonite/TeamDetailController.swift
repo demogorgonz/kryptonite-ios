@@ -44,10 +44,7 @@ class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate 
         super.viewDidLoad()
         
         self.title = try? identity.team().name
-        
-        tableView.rowHeight = UITableViewAutomaticDimension
-        tableView.estimatedRowHeight = 70
-        
+                
         let refresh = UIRefreshControl()
         refresh.tintColor = UIColor.app
         refresh.addTarget(self, action: #selector(TeamDetailController.doFetchTeamUpdates), for: UIControlEvents.valueChanged)

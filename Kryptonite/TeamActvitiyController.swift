@@ -18,6 +18,9 @@ class TeamActivityController: KRBaseTableController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.title = "Team Activity"
+        
+        tableView.rowHeight = UITableViewAutomaticDimension
+        tableView.estimatedRowHeight = 70
     }
     
     override func viewWillAppear(_ animated: Bool) {

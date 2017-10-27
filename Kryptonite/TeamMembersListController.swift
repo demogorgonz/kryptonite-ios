@@ -18,6 +18,9 @@ class TeamMemberListController: KRBaseTableController {
         super.viewDidLoad()
         self.navigationItem.setKrLogo()
         self.title = "Team Members"
+        
+        tableView.rowHeight = UITableViewAutomaticDimension
+        tableView.estimatedRowHeight = 70
     
     }
     

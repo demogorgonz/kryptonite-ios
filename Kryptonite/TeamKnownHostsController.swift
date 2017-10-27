@@ -17,6 +17,9 @@ class TeamKnownHostsController: KRBaseTableController {
     override func viewDidLoad() {
         super.viewDidLoad()        
         self.title = "Pinned Hosts"
+        
+        tableView.rowHeight = UITableViewAutomaticDimension
+        tableView.estimatedRowHeight = 70
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -46,9 +49,11 @@ class TeamKnownHostsController: KRBaseTableController {
 class SSHHostKeyCell:UITableViewCell {
     @IBOutlet weak var hostLabel:UILabel!
     @IBOutlet weak var keyLabel:UILabel!
-    
+    @IBOutlet weak var hashLabel:UILabel!
+
     func set(host:SSHHostKey) {
         hostLabel.text = host.host
+        hashLabel.text = host.publicKey.SHA256.toBase64()
         keyLabel.text = (try? host.publicKey.toAuthorized()) ?? host.publicKey.toBase64()
     }
 }
