@@ -475,7 +475,7 @@ class TeamService {
         }
     }
     
-    // Fufill Team Operation Requests
+    // Fulfill Team Operation Requests
     func responseFor(requestableOperation:RequestableTeamOperation) throws -> (TeamService, TeamOperationResponse)
     {
         mutex.lock()

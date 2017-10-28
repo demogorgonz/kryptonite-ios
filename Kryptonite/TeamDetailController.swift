@@ -10,11 +10,13 @@ import UIKit
 import LocalAuthentication
 
 
-class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate {
+class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate, UITextFieldDelegate {
     
-    @IBOutlet weak var teamLabel:UILabel!
+    @IBOutlet weak var teamTextField:UITextField!
+    @IBOutlet weak var editTeamButton:UIButton!
+    @IBOutlet weak var editApprovalIntervalButton:UIButton!
+
     @IBOutlet weak var emailLabel:UILabel!
-    @IBOutlet weak var leaveTeamButton:UIButton!
     @IBOutlet weak var headerView:UIView!
     
     @IBOutlet weak var activityDetailLabel:UILabel!
@@ -22,7 +24,7 @@ class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate 
     @IBOutlet weak var hostsDetailLabel:UILabel!
 
     @IBOutlet weak var approvalWindowAttributeLabel:UILabel!
-    @IBOutlet weak var approvalWindowLabel:UILabel!
+    @IBOutlet weak var approvalWindowTextField:UITextField!
     
     var _teamIdentity:TeamIdentity!
     var identity: TeamIdentity {
@@ -43,14 +45,16 @@ class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate 
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.title = try? identity.team().name
-                
+        didUpdateTeamIdentity()
+
         let refresh = UIRefreshControl()
         refresh.tintColor = UIColor.app
         refresh.addTarget(self, action: #selector(TeamDetailController.doFetchTeamUpdates), for: UIControlEvents.valueChanged)
         tableView.refreshControl = refresh
         
-        didUpdateTeamIdentity()
+        teamTextField.delegate = self
+        approvalWindowTextField.isEnabled = false
+        
     }
     
     @objc dynamic func doFetchTeamUpdates() {
@@ -59,44 +63,54 @@ class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate 
     
     func didUpdateTeamIdentity() {
         dispatchMain {
-            self.emailLabel.text = self.identity.email
-
-            do {
-                let team = try self.identity.team()
-                self.teamLabel.text = team.name
-                self.approvalWindowLabel.text = team.policy.description
-                self.team = team
-                
-                self.isAdmin = try self.identity.isAdmin()
-                
-                if self.isAdmin {
-                    self.emailLabel.text = self.identity.email + " (owner)"
-                }
-                
-                // pre-fetch team lists
-                self.blocks = try self.identity.dataManager.fetchAll().map {
-                    try SigChain.Payload(jsonString: $0.payload)
-                }
-                self.members = try self.identity.dataManager.fetchAll()
-                self.hosts = try self.identity.dataManager.fetchAll()
-                
-                // set activity label
-                let blocksCount = self.blocks.count
-                let blocksSuffix = blocksCount == 1 ? "" : "s"
-                self.activityDetailLabel.text = "\(blocksCount) event\(blocksSuffix)"
-                
-                let membersCount = self.members.count
-                let membersSuffix = membersCount == 1 ? "" : "s"
-                self.membersDetailLabel.text = "\(membersCount) member\(membersSuffix)"
-
-                let hostsCount = self.hosts.count
-                let hostsSuffix = hostsCount == 1 ? "" : "s"
-                self.hostsDetailLabel.text = "\(hostsCount) pinned public-key\(hostsSuffix)"
-
-            } catch {
-                self.showWarning(title: "Error fetching team", body: "\(error)")
-            }
+            self.didUpdateTeamIdentityMainThread()
         }
+    }
+    
+    func didUpdateTeamIdentityMainThread() {
+        do {
+            let team = try self.identity.team()
+            
+            self.teamTextField.text = team.name
+            self.approvalWindowTextField.text = team.policy.description
+            self.team = team
+            
+            self.isAdmin = try self.identity.isAdmin()
+            
+            if self.isAdmin {
+                self.emailLabel.text = self.identity.email + " (owner)"
+                self.editTeamButton.isHidden = false
+                self.editApprovalIntervalButton.isHidden = false
+            } else {
+                self.emailLabel.text = self.identity.email
+                self.editTeamButton.isHidden = true
+                self.editApprovalIntervalButton.isHidden = true
+            }
+            
+            // pre-fetch team lists
+            self.blocks = try self.identity.dataManager.fetchAll().map {
+                try SigChain.Payload(jsonString: $0.payload)
+            }
+            self.members = try self.identity.dataManager.fetchAll()
+            self.hosts = try self.identity.dataManager.fetchAll()
+            
+            // set activity label
+            let blocksCount = self.blocks.count
+            let blocksSuffix = blocksCount == 1 ? "" : "s"
+            self.activityDetailLabel.text = "\(blocksCount) event\(blocksSuffix)"
+            
+            let membersCount = self.members.count
+            let membersSuffix = membersCount == 1 ? "" : "s"
+            self.membersDetailLabel.text = "\(membersCount) member\(membersSuffix)"
+            
+            let hostsCount = self.hosts.count
+            let hostsSuffix = hostsCount == 1 ? "" : "s"
+            self.hostsDetailLabel.text = "\(hostsCount) pinned public-key\(hostsSuffix)"
+            
+        } catch {
+            self.showWarning(title: "Error fetching team", body: "\(error)")
+        }
+
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -125,6 +139,103 @@ class TeamDetailController: KRBaseTableController, KRTeamDataControllerDelegate 
         self.identity = identity
     }
     
+    //MARK: Edit
+    
+    /// name
+    @IBAction func editTeamNameTapped() {
+        self.teamTextField.isEnabled = true
+        self.teamTextField.becomeFirstResponder()
+    }
+    
+    func textFieldDidBeginEditing(_ textField: UITextField) {}
+    
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        return true
+    }
+    
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        
+        guard let name = textField.text?.trim(), let team = self.team else {
+            return false
+        }
+        
+        guard name.isValidName else {
+            return false
+        }
+        
+        guard name != team.name else {
+            textField.resignFirstResponder()
+            return true
+        }
+        
+        self.askConfirmationIn(title: "Change team name?", text: "Are you sure you want to change the team name to \"\(name)\"?", accept: "Yes", cancel: "Cancel")
+        { (didConfirm) in
+            
+            guard didConfirm else {
+                self.teamTextField.text = team.name
+                return
+            }
+            
+            do {
+                let (service, _) = try TeamService.shared().responseFor(requestableOperation: RequestableTeamOperation.setTeamInfo(Team.Info(name: name)))
+                
+                try IdentityManager.commitTeamChanges(identity: service.teamIdentity)
+                
+            } catch {
+                self.showWarning(title: "Error Changing Team Name", body: "\(error)")
+            }
+            
+            self.teamTextField.resignFirstResponder()
+        }
+        
+        return true
+    }
+    
+    
+    /// approval
+    
+    @IBAction func editApprovalInterviewTapped() {
+        let picker = UIDatePicker()
+        approvalWindowTextField.inputView = picker
+        picker.countDownDuration = TimeInterval(self.team?.policy.temporaryApprovalSeconds ?? 0)
+        picker.datePickerMode = .countDownTimer
+        picker.backgroundColor  = UIColor.white
+        picker.addTarget(self, action: #selector(TeamDetailController.valueChanged(picker:)), for: UIControlEvents.valueChanged)
+        
+        self.approvalWindowTextField.isEnabled = true
+        self.approvalWindowTextField.becomeFirstResponder()
+    }
+    
+    @objc dynamic func valueChanged(picker:UIDatePicker) {
+        
+        self.approvalWindowTextField.isEnabled = false
+        let chosenPolicy = Team.PolicySettings(temporaryApprovalSeconds: UInt64(picker.countDownDuration))
+        self.approvalWindowTextField.text = chosenPolicy.description.uppercased()
+
+        self.askConfirmationIn(title: "Change approval window?", text: "Are you sure you want to change the auto-approval window to \"\(chosenPolicy.description)\" for all team members?", accept: "Yes", cancel: "Cancel")
+        { (didConfirm) in
+            
+            guard didConfirm else {
+                self.approvalWindowTextField.text = self.team?.policy.description.uppercased() ?? "<error>"
+                return
+            }
+            
+            self.approvalWindowTextField.resignFirstResponder()
+
+            do {
+                let (service, _) = try TeamService.shared().responseFor(requestableOperation: RequestableTeamOperation.setPolicy(chosenPolicy))
+                
+                try IdentityManager.commitTeamChanges(identity: service.teamIdentity)
+                
+            } catch {
+                self.showWarning(title: "Error Changing Team Name", body: "\(error)")
+            }
+            
+        }
+    }
+
+    
+
     /// Leave Team
     
     @IBAction func leaveTeamTapped() {

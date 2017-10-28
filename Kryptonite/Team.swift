@@ -51,7 +51,7 @@ struct Team:Jsonable {
         
         var description:String {
             if let approvalSeconds = temporaryApprovalSeconds {
-                return TimeInterval(approvalSeconds).timeAgo(suffix: "")
+                return TimeInterval(approvalSeconds).timeAgoLong(suffix: "")
             } else {
                 return "unset"
             }

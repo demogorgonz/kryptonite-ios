@@ -86,6 +86,10 @@
 		FA29779F1D7746CC003EB1F7 /* Resources.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA29779E1D7746CC003EB1F7 /* Resources.swift */; };
 		FA2F22A21DC3C3CA0094076E /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2F22A11DC3C3CA0094076E /* Onboarding.swift */; };
 		FA309F421DA42C69006D8D81 /* HelpController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA309F411DA42C69006D8D81 /* HelpController.swift */; };
+		FA349C581FA521F5002F968F /* String+Validations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA349C571FA521F5002F968F /* String+Validations.swift */; };
+		FA349C591FA521F5002F968F /* String+Validations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA349C571FA521F5002F968F /* String+Validations.swift */; };
+		FA349C5A1FA521F5002F968F /* String+Validations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA349C571FA521F5002F968F /* String+Validations.swift */; };
+		FA349C5B1FA521F5002F968F /* String+Validations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA349C571FA521F5002F968F /* String+Validations.swift */; };
 		FA38F9221F79A26F00668F73 /* SigChain+WriteLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA38F9211F79A26F00668F73 /* SigChain+WriteLog.swift */; };
 		FA38F9231F79A26F00668F73 /* SigChain+WriteLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA38F9211F79A26F00668F73 /* SigChain+WriteLog.swift */; };
 		FA3A5F481F914968004A8007 /* Response+Team.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA3A5F471F914968004A8007 /* Response+Team.swift */; };
@@ -594,6 +598,7 @@
 		FA29779E1D7746CC003EB1F7 /* Resources.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Resources.swift; sourceTree = "<group>"; };
 		FA2F22A11DC3C3CA0094076E /* Onboarding.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
 		FA309F411DA42C69006D8D81 /* HelpController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = HelpController.swift; sourceTree = "<group>"; };
+		FA349C571FA521F5002F968F /* String+Validations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+Validations.swift"; sourceTree = "<group>"; };
 		FA38F9211F79A26F00668F73 /* SigChain+WriteLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SigChain+WriteLog.swift"; sourceTree = "<group>"; };
 		FA3A5F471F914968004A8007 /* Response+Team.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Response+Team.swift"; sourceTree = "<group>"; };
 		FA42B6EB1F9FB934006A89DD /* TeamsMarketingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamsMarketingController.swift; sourceTree = "<group>"; };
@@ -1160,6 +1165,7 @@
 				FA92E9251D77B5A4006372B4 /* UIViewController+KR.swift */,
 				FADD71491D772F8200DA5112 /* Date+KR.swift */,
 				FABA4B171D9C21BE0057A666 /* String+User.swift */,
+				FA349C571FA521F5002F968F /* String+Validations.swift */,
 			);
 			name = Extensions;
 			sourceTree = "<group>";
@@ -1941,6 +1947,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FA49F78A1D9B6B3300372556 /* TodayViewController.swift in Sources */,
+				FA349C591FA521F5002F968F /* String+Validations.swift in Sources */,
 				FABA4B191D9C21C40057A666 /* String+User.swift in Sources */,
 				FA15EB441DA5B4F100BED16C /* Log.swift in Sources */,
 				FA15EB3B1DA5B4E600BED16C /* Globals.swift in Sources */,
@@ -1968,6 +1975,7 @@
 				FAE495921DBD89F100A97708 /* M13CheckboxSpiralController.swift in Sources */,
 				FA12EABF1ED0E34B001603BF /* Keypair+PGPFormat.swift in Sources */,
 				FA2949CB1EDCB77800A5C70B /* LogDetailController.swift in Sources */,
+				FA349C581FA521F5002F968F /* String+Validations.swift in Sources */,
 				FA1682811D77682C00A7ED53 /* SessionsController.swift in Sources */,
 				8DD436A41DF3719000201106 /* CommunicationActivity.swift in Sources */,
 				FA16826F1D774D6000A7ED53 /* RSCodeLayer.swift in Sources */,
@@ -2180,6 +2188,7 @@
 				FA5AA0141F9E9AF800954872 /* TeamAuditLog+Send.swift in Sources */,
 				FA571B1E1F460B76007FD7F3 /* TeamUpdater.swift in Sources */,
 				FA3A5F4A1F914968004A8007 /* Response+Team.swift in Sources */,
+				FA349C5B1FA521F5002F968F /* String+Validations.swift in Sources */,
 				FA2949E51EDE379900A5C70B /* UserIDList.swift in Sources */,
 				8D05CB361ED3E4BC00CCCC38 /* GitInfo.swift in Sources */,
 				FAB5179B1E54D54F0032DD47 /* KeyPair.swift in Sources */,
@@ -2241,6 +2250,7 @@
 				FA2949E41EDE379900A5C70B /* UserIDList.swift in Sources */,
 				FA8B54321ED774C100891161 /* Sodium.swift in Sources */,
 				FA8B542D1ED774C100891161 /* Wrap.swift in Sources */,
+				FA349C5A1FA521F5002F968F /* String+Validations.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
